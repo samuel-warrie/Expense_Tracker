@@ -37,8 +37,8 @@ object NotificationHelper {
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("Expense Alert")
-            .setContentText("Your total expenses have reached $${String.format(Locale.US, "%.2f", total)}!")
+            .setContentTitle("Budget Exceeded")
+            .setContentText("Your total expenses have exceeded your budget: $${String.format(Locale.US, "%.2f", total)}!")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
 
         with(NotificationManagerCompat.from(context)) {

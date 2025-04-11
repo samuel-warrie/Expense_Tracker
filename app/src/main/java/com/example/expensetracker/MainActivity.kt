@@ -2,6 +2,7 @@ package com.example.expensetracker
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,6 +21,7 @@ import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Alignment
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.FirebaseApp
 import android.Manifest
@@ -58,15 +60,30 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
     val totalExpenses by viewModel.totalExpenses.collectAsState()
     val budget by viewModel.budget.collectAsState()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+    val operationSuccess by viewModel.operationSuccess.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
-    // Check internet connectivity using LocalContext
     val context = LocalContext.current
     val isOnline by remember {
-        mutableStateOf((context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).let { cm ->
-            val network = cm.activeNetwork ?: return@let false
-            val capabilities = cm.getNetworkCapabilities(network) ?: return@let false
-            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
-        })
+        mutableStateOf(
+            (context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).run {
+                val network = activeNetwork
+                if (network != null) {
+                    val capabilities: NetworkCapabilities? = getNetworkCapabilities(network)
+                    capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                } else {
+                    false
+                }
+            }
+        )
+    }
+
+    // Clear fields when operation succeeds
+    LaunchedEffect(operationSuccess) {
+        if (operationSuccess) {
+            amount = ""
+            category = ""
+        }
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -79,11 +96,20 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Show offline message if not connected
             if (!isOnline) {
                 Text(
                     text = "You are offline. Changes will sync when you reconnect.",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            errorMessage?.let {
+                Text(
+                    text = it,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center
@@ -109,9 +135,9 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                 onClick = {
                     val amountDouble = amount.toDoubleOrNull() ?: 0.0
                     if (amountDouble > 0 && category.isNotBlank()) {
-                        viewModel.addExpense(amountDouble, category)
-                        amount = ""
-                        category = ""
+                        viewModel.addExpense(amountDouble, category, isOnline)
+                    } else {
+                        viewModel.setErrorMessage("Please enter a valid amount and category")
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -196,26 +222,31 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = expense.category,
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f)
                             )
-                            Row {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Text(
                                     text = "$${String.format(Locale.US, "%.2f", expense.amount)}",
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 IconButton(
-                                    onClick = { viewModel.deleteExpense(expense.id) },
+                                    onClick = {
+                                        viewModel.deleteExpense(expense.id, isOnline)
+                                    },
                                     enabled = isOnline
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
                                         contentDescription = "Delete Expense",
-                                        tint = Color.Red
+                                        tint = Color(0xFF6200EE) // Purple color
                                     )
                                 }
                             }
