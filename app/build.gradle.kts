@@ -20,12 +20,19 @@ android {
     }
 
     buildTypes {
+            debug {
+                // Ensure BuildConfig is generated for debug builds
+                isDebuggable = true
+            }
+
+
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
         }
     }
     compileOptions {
@@ -67,7 +74,12 @@ dependencies {
     // Firebase
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore.ktx)
+    implementation(libs.firebase.auth.ktx)
 
     // Notifications
     implementation(libs.androidx.work.runtime.ktx)
+
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.runtime)
+
 }

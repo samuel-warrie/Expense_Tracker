@@ -7,25 +7,28 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.Alignment
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.FirebaseApp
 import android.Manifest
 import android.os.Build
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -46,7 +49,70 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            ExpenseTrackerApp()
+            AppNavigation()
+        }
+    }
+}
+
+@Composable
+fun AppNavigation() {
+    var showWelcomeScreen by remember { mutableStateOf(true) }
+
+    if (showWelcomeScreen) {
+        WelcomeScreen(
+            onAnimationComplete = {
+                showWelcomeScreen = false
+            }
+        )
+    } else {
+        ExpenseTrackerApp()
+    }
+}
+
+@Composable
+fun WelcomeScreen(onAnimationComplete: () -> Unit) {
+    // Animation state for fade-in and scale
+    val alpha by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(
+            durationMillis = 1500,
+            easing = LinearEasing
+        ),
+        label = "Fade Animation"
+    )
+
+    val scale by animateFloatAsState(
+        targetValue = 1f,
+        animationSpec = tween(
+            durationMillis = 1500,
+            easing = FastOutSlowInEasing
+        ),
+        label = "Scale Animation"
+    )
+
+    // Trigger the transition to the main screen after the animation completes
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(2000) // Delay to match animation duration + a bit extra
+        onAnimationComplete()
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "Welcome to Expense Tracker",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier
+                    .scale(scale)
+                    .alpha(alpha),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.primary
+            )
         }
     }
 }

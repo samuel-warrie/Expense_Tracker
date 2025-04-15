@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import androidx.core.content.edit
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
     private val db = FirebaseFirestore.getInstance()
@@ -121,20 +122,20 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun updateBudget(newBudget: Double) {
         if (newBudget > 0) {
             _budget.value = newBudget
-            sharedPreferences.edit().putFloat("budget", newBudget.toFloat()).apply()
+            sharedPreferences.edit() { putFloat("budget", newBudget.toFloat()) }
             checkBudget(_totalExpenses.value)
         }
     }
 
     fun toggleNotifications(enabled: Boolean) {
         _notificationsEnabled.value = enabled
-        sharedPreferences.edit().putBoolean("notifications_enabled", enabled).apply()
+        sharedPreferences.edit() { putBoolean("notifications_enabled", enabled) }
     }
 
     private fun listenToExpenses() {
         db.collection("expenses").addSnapshotListener { snapshot, error ->
             if (error != null) {
-                _errorMessage.value = "Failed to fetch expenses: ${error.message}" // Fixed: Use .value to update MutableStateFlow
+                _errorMessage.value = "Failed to fetch expenses: ${error.message}"
                 return@addSnapshotListener
             }
             if (snapshot != null) {
