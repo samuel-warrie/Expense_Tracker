@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import androidx.core.content.edit
+import android.util.Log
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
     private val db = FirebaseFirestore.getInstance()
@@ -36,6 +36,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     // Track the error message for failed operations
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage
+
+    // Track whether a deletion operation is in progress
+    private val _isDeleting = MutableStateFlow(false)
+    val isDeleting: StateFlow<Boolean> = _isDeleting
 
     init {
         NotificationHelper.createNotificationChannel(application)
@@ -80,19 +84,27 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             timestamp = Timestamp.now()
         )
         viewModelScope.launch {
+            Log.d("ExpenseViewModel", "addExpense started, isDeleting: ${_isDeleting.value}")
+            _isDeleting.value = false // Reset isDeleting to ensure it's not stuck
+            Log.d("ExpenseViewModel", "addExpense, isDeleting reset to: ${_isDeleting.value}")
             try {
+                Log.d("ExpenseViewModel", "Starting to add expense: $amount, $category")
                 // Ensure network is enabled
                 db.enableNetwork().await()
-                // Attempt to write to Firestore and wait for server confirmation
+                // Attempt to write to Firestore
                 db.collection("expenses").document(expense.id).set(expense).await()
+                Log.d("ExpenseViewModel", "Expense added successfully")
                 _operationSuccess.value = true
                 _errorMessage.value = null
             } catch (e: Exception) {
+                Log.e("ExpenseViewModel", "Failed to add expense: ${e.message}")
                 _operationSuccess.value = false
-                _errorMessage.value = "Failed to add expense: No internet connection"
+                _errorMessage.value = "Failed to add expense: ${e.message}"
                 // Disable network and clear cache to prevent queued writes
                 db.disableNetwork().await()
                 db.clearPersistence().await()
+            } finally {
+                Log.d("ExpenseViewModel", "addExpense finished, isDeleting: ${_isDeleting.value}")
             }
         }
     }
@@ -104,6 +116,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         viewModelScope.launch {
+            Log.d("ExpenseViewModel", "deleteExpense started, isDeleting: ${_isDeleting.value}")
+            _isDeleting.value = false // Reset isDeleting to ensure it's not stuck
+            Log.d("ExpenseViewModel", "deleteExpense, isDeleting reset to: ${_isDeleting.value}")
             try {
                 // Ensure network is enabled
                 db.enableNetwork().await()
@@ -111,10 +126,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 _operationSuccess.value = true
                 _errorMessage.value = null
             } catch (e: Exception) {
+                Log.e("ExpenseViewModel", "Failed to delete expense: ${e.message}")
                 _operationSuccess.value = false
-                _errorMessage.value = "Failed to delete expense: No internet connection"
+                _errorMessage.value = "Failed to delete expense: ${e.message}"
                 db.disableNetwork().await()
                 db.clearPersistence().await()
+            } finally {
+                Log.d("ExpenseViewModel", "deleteExpense finished, isDeleting: ${_isDeleting.value}")
             }
         }
     }
@@ -126,23 +144,35 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             return
         }
         viewModelScope.launch {
+            Log.d("ExpenseViewModel", "clearAllExpenses started, setting isDeleting to true")
+            _isDeleting.value = true // Set deleting state to true
             try {
                 // Ensure network is enabled
                 db.enableNetwork().await()
                 // Fetch all expenses and delete them
                 val snapshot = db.collection("expenses").get().await()
+                if (snapshot.isEmpty) {
+                    _operationSuccess.value = true
+                    _errorMessage.value = null
+                    _isDeleting.value = false
+                    Log.d("ExpenseViewModel", "clearAllExpenses: No expenses to delete, isDeleting: ${_isDeleting.value}")
+                    return@launch
+                }
                 val batch = db.batch()
-                for (doc in snapshot.documents) {
+                snapshot.documents.forEach { doc ->
                     batch.delete(db.collection("expenses").document(doc.id))
                 }
                 batch.commit().await()
                 _operationSuccess.value = true
                 _errorMessage.value = null
+                Log.d("ExpenseViewModel", "clearAllExpenses completed successfully")
             } catch (e: Exception) {
+                Log.e("ExpenseViewModel", "Failed to clear expenses: ${e.message}")
                 _operationSuccess.value = false
-                _errorMessage.value = "Failed to clear expenses: No internet connection"
-                db.disableNetwork().await()
-                db.clearPersistence().await()
+                _errorMessage.value = "Failed to clear expenses: ${e.message}"
+            } finally {
+                _isDeleting.value = false // Reset deleting state
+                Log.d("ExpenseViewModel", "clearAllExpenses finished, isDeleting: ${_isDeleting.value}")
             }
         }
     }
@@ -150,14 +180,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun updateBudget(newBudget: Double) {
         if (newBudget > 0) {
             _budget.value = newBudget
-            sharedPreferences.edit() { putFloat("budget", newBudget.toFloat()) }
+            sharedPreferences.edit().putFloat("budget", newBudget.toFloat()).apply()
             checkBudget(_totalExpenses.value)
         }
     }
 
     fun toggleNotifications(enabled: Boolean) {
         _notificationsEnabled.value = enabled
-        sharedPreferences.edit() { putBoolean("notifications_enabled", enabled) }
+        sharedPreferences.edit().putBoolean("notifications_enabled", enabled).apply()
     }
 
     private fun listenToExpenses() {

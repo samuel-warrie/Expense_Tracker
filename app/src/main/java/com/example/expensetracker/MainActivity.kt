@@ -8,8 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -119,7 +118,7 @@ fun WelcomeScreen(onAnimationComplete: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // Opt-in to experimental Material 3 API
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
     var amount by remember { mutableStateOf("") }
@@ -131,15 +130,24 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
     val operationSuccess by viewModel.operationSuccess.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val isDeleting by viewModel.isDeleting.collectAsState()
 
     // State for category dropdown
-    val categories = listOf("Food", "Travel", "Shopping", "Bills", "Entertainment", "Other")
+    val context = LocalContext.current
+    val sharedPreferences = context.getSharedPreferences("ExpenseTrackerPrefs", Context.MODE_PRIVATE)
+    val defaultCategories = listOf("Food", "Travel", "Shopping", "Bills", "Entertainment", "Other")
+    val savedCategories = sharedPreferences.getString("custom_categories", null)?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
+    val initialCategories = (defaultCategories + savedCategories).distinct()
+    var categories by remember { mutableStateOf(initialCategories) }
     var expanded by remember { mutableStateOf(false) }
+
+    // State for adding new category
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var newCategory by remember { mutableStateOf("") }
 
     // State for confirmation dialog
     var showDialog by remember { mutableStateOf(false) }
 
-    val context = LocalContext.current
     val isOnline by remember {
         mutableStateOf(
             (context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager).run {
@@ -163,7 +171,12 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
     }
 
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             Text(
                 text = "Expense Tracker",
                 style = MaterialTheme.typography.headlineMedium,
@@ -213,7 +226,7 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                     label = { Text("Category") },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = isOnline), // Updated menuAnchor with MenuAnchorType
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = isOnline),
                     enabled = isOnline,
                     readOnly = true,
                     trailingIcon = {
@@ -236,9 +249,64 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                         )
                     }
+                    // Add New Category option
+                    DropdownMenuItem(
+                        text = { Text("Add New Category") },
+                        onClick = {
+                            showAddCategoryDialog = true
+                            expanded = false
+                        },
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                    )
                 }
             }
 
+            // Dialog for adding a new category
+            if (showAddCategoryDialog) {
+                AlertDialog(
+                    onDismissRequest = { showAddCategoryDialog = false },
+                    title = { Text("Add New Category") },
+                    text = {
+                        Column {
+                            OutlinedTextField(
+                                value = newCategory,
+                                onValueChange = { newCategory = it },
+                                label = { Text("Category Name") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (newCategory.isNotBlank() && newCategory !in categories) {
+                                    val updatedCategories = categories + newCategory
+                                    categories = updatedCategories
+                                    // Save to SharedPreferences
+                                    sharedPreferences.edit()
+                                        .putString("custom_categories", updatedCategories.filter { it !in defaultCategories }.joinToString(","))
+                                        .apply()
+                                    category = newCategory // Set the new category as selected
+                                }
+                                newCategory = ""
+                                showAddCategoryDialog = false
+                            }
+                        ) {
+                            Text("Add")
+                        }
+                    },
+                    dismissButton = {
+                        Button(onClick = {
+                            newCategory = ""
+                            showAddCategoryDialog = false
+                        }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+
+            // Add Expense Button without Loading Indicator
             Button(
                 onClick = {
                     val amountDouble = amount.toDoubleOrNull() ?: 0.0
@@ -364,16 +432,25 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Clear All Expenses Button
-                Button(
-                    onClick = { showDialog = true },
+                // Clear All Expenses Button with Loading Indicator
+                Box(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = isOnline,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text("Clear All Expenses")
+                    if (isDeleting) {
+                        CircularProgressIndicator()
+                    } else {
+                        Button(
+                            onClick = { showDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = isOnline,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF6200EE)
+                            )
+                        ) {
+                            Text("Clear All Expenses")
+                        }
+                    }
                 }
             }
 
@@ -390,7 +467,7 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                                 showDialog = false
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error
+                                containerColor = Color(0xFF6200EE)
                             )
                         ) {
                             Text("Yes, Clear")
