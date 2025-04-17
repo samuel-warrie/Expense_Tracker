@@ -19,7 +19,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _expenses = MutableStateFlow<List<Expense>>(emptyList())
     val expenses: StateFlow<List<Expense>> = _expenses
 
-    private val _totalExpenses = MutableStateFlow(0.0) // Fixed typo: MutableFlow -> MutableStateFlow
+    private val _totalExpenses = MutableStateFlow(0.0)
     val totalExpenses: StateFlow<Double> = _totalExpenses
 
     private val sharedPreferences = application.getSharedPreferences("ExpenseTrackerPrefs", Context.MODE_PRIVATE)
@@ -119,6 +119,34 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun clearAllExpenses(isOnline: Boolean) {
+        if (!isOnline) {
+            _operationSuccess.value = false
+            _errorMessage.value = "Cannot clear expenses: No internet connection"
+            return
+        }
+        viewModelScope.launch {
+            try {
+                // Ensure network is enabled
+                db.enableNetwork().await()
+                // Fetch all expenses and delete them
+                val snapshot = db.collection("expenses").get().await()
+                val batch = db.batch()
+                for (doc in snapshot.documents) {
+                    batch.delete(db.collection("expenses").document(doc.id))
+                }
+                batch.commit().await()
+                _operationSuccess.value = true
+                _errorMessage.value = null
+            } catch (e: Exception) {
+                _operationSuccess.value = false
+                _errorMessage.value = "Failed to clear expenses: No internet connection"
+                db.disableNetwork().await()
+                db.clearPersistence().await()
+            }
+        }
+    }
+
     fun updateBudget(newBudget: Double) {
         if (newBudget > 0) {
             _budget.value = newBudget
@@ -149,8 +177,16 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun checkBudget(total: Double) {
-        if (total > _budget.value && _notificationsEnabled.value) {
-            NotificationHelper.showBudgetAlert(getApplication(), total)
+        if (_notificationsEnabled.value) {
+            val budgetValue = _budget.value
+            // Check if total expenses are within $300 of the budget but not exceeding it
+            if (total in (budgetValue - 300.0)..budgetValue) {
+                NotificationHelper.showApproachingBudgetAlert(getApplication(), total, budgetValue)
+            }
+            // Check if total expenses exceed the budget
+            if (total > budgetValue) {
+                NotificationHelper.showBudgetAlert(getApplication(), total, budgetValue)
+            }
         }
     }
 }

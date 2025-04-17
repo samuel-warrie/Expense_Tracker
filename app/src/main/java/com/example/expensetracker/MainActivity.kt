@@ -8,27 +8,29 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.border
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.firebase.FirebaseApp
 import android.Manifest
 import android.os.Build
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.scale
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -39,9 +41,7 @@ class MainActivity : ComponentActivity() {
         val requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) { isGranted: Boolean ->
-            if (!isGranted) {
-                // Permission denied, handle accordingly if needed
-            }
+            // Permission denied handling can be added here if needed
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -98,7 +98,7 @@ fun WelcomeScreen(onAnimationComplete: () -> Unit) {
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = Color(0xFFEDE7F6) // Light Purple background
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -106,17 +106,20 @@ fun WelcomeScreen(onAnimationComplete: () -> Unit) {
         ) {
             Text(
                 text = "Welcome to Expense Tracker",
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.headlineLarge.copy(
+                    fontWeight = FontWeight.Bold
+                ),
                 modifier = Modifier
                     .scale(scale)
                     .alpha(alpha),
                 textAlign = TextAlign.Center,
-                color = MaterialTheme.colorScheme.primary
+                color = Color(0xFF6A1B9A) // Deep Purple
             )
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class) // Opt-in to experimental Material 3 API
 @Composable
 fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
     var amount by remember { mutableStateOf("") }
@@ -128,6 +131,13 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
     val operationSuccess by viewModel.operationSuccess.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+
+    // State for category dropdown
+    val categories = listOf("Food", "Travel", "Shopping", "Bills", "Entertainment", "Other")
+    var expanded by remember { mutableStateOf(false) }
+
+    // State for confirmation dialog
+    var showDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val isOnline by remember {
@@ -190,13 +200,45 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                 modifier = Modifier.fillMaxWidth(),
                 enabled = isOnline
             )
-            OutlinedTextField(
-                value = category,
-                onValueChange = { category = it },
-                label = { Text("Category") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = isOnline
-            )
+
+            // Category Dropdown using ExposedDropdownMenuBox
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded && isOnline },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = category,
+                    onValueChange = { category = it },
+                    label = { Text("Category") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = isOnline), // Updated menuAnchor with MenuAnchorType
+                    enabled = isOnline,
+                    readOnly = true,
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surface)
+                ) {
+                    categories.forEach { cat ->
+                        DropdownMenuItem(
+                            text = { Text(cat) },
+                            onClick = {
+                                category = cat
+                                expanded = false
+                            },
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+
             Button(
                 onClick = {
                     val amountDouble = amount.toDoubleOrNull() ?: 0.0
@@ -319,6 +361,47 @@ fun ExpenseTrackerApp(viewModel: ExpenseViewModel = viewModel()) {
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Clear All Expenses Button
+                Button(
+                    onClick = { showDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isOnline,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Clear All Expenses")
+                }
+            }
+
+            // Confirmation Dialog
+            if (showDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDialog = false },
+                    title = { Text("Confirm Clear All Expenses") },
+                    text = { Text("Are you sure you want to delete all expenses? This action cannot be undone.") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.clearAllExpenses(isOnline)
+                                showDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Text("Yes, Clear")
+                        }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
         }
     }
